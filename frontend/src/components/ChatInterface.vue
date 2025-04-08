@@ -51,30 +51,6 @@
       <!-- Input Area -->
       <div class="border-t border-gray-200 p-4 bg-white">
         <div class="flex space-x-2">
-          <!-- File Upload Button -->
-          <button
-            @click="triggerFileUpload"
-            class="p-2 text-gray-600 hover:text-gray-800"
-            title="Upload file"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-            </svg>
-          </button>
-          
-          <!-- Image Upload Button -->
-          <button
-            @click="triggerImageUpload"
-            class="p-2 text-gray-600 hover:text-gray-800"
-            title="Upload image"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-          </button>
-          
           <input
             v-model="newMessage"
             @keyup.enter="sendMessage"
@@ -90,22 +66,6 @@
             Send
           </button>
         </div>
-        
-        <!-- Hidden File Inputs -->
-        <input
-          type="file"
-          ref="fileInput"
-          @change="handleFileUpload"
-          class="hidden"
-          accept=".pdf,.doc,.docx,.txt"
-        />
-        <input
-          type="file"
-          ref="imageInput"
-          @change="handleImageUpload"
-          class="hidden"
-          accept="image/*"
-        />
       </div>
     </div>
 
@@ -114,20 +74,22 @@
       <div class="p-4">
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Tools & Settings</h2>
         
+        <!-- Template Selection -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Template</label>
+          <select
+            v-model="selectedTemplate"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="template1">Professional Business</option>
+            <option value="template2">Artistic Painting</option>
+            <option value="template3">Modern Minimalist</option>
+          </select>
+        </div>
+
         <!-- Image Preview Window -->
         <div class="mb-6">
           <h3 class="text-sm font-medium text-gray-700 mb-2">Image Preview</h3>
-          <!-- Template Selection -->
-          <div class="mb-2">
-            <select
-              v-model="selectedTemplate"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="template1">Template 1</option>
-              <option value="template2">Template 2</option>
-              <option value="template3">Template 3</option>
-            </select>
-          </div>
           <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 h-64 flex items-center justify-center bg-gray-50">
             <div v-if="previewImage" class="w-full h-full flex items-center justify-center">
               <img :src="previewImage" class="max-h-full max-w-full object-contain" />
@@ -236,18 +198,19 @@
           </div>
         </div>
 
-        <!-- Chat Controls -->
-        <div class="p-4 border-b border-gray-200">
-          <div class="flex space-x-2">
+        <!-- Quick Actions -->
+        <div>
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Quick Actions</h3>
+          <div class="grid grid-cols-2 gap-2">
             <button
               @click="clearChat"
-              class="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
             >
               Clear Chat
             </button>
             <button
               @click="exportChat"
-              class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
             >
               Export Chat
             </button>
@@ -268,20 +231,18 @@ const newMessage = ref('')
 const isLoading = ref(false)
 const multimodalEnabled = ref(true)
 const selectedModel = ref('gpt-4')
+const fileInput = ref(null)
+const imageInput = ref(null)
 const messagesContainer = ref(null)
 const previewImage = ref(null)
 const isRendering = ref(false)
-const fileInput = ref(null)
-const imageInput = ref(null)
+const selectedTemplate = ref('template1')
 
-// 新增数据合成相关状态
+// 数据合成相关状态
 const selectedDataSource = ref('source1')
 const dataCount = ref(100)
 const outputFilename = ref('synthesized_data')
 const isSynthesizing = ref(false)
-
-// 新增模板选择状态
-const selectedTemplate = ref('template1')
 
 const { y: scrollY } = useScroll(messagesContainer)
 
@@ -309,10 +270,15 @@ const sendMessage = async () => {
   
   try {
     isLoading.value = true
-    const response = await axios.post('/api/chat', {
+    const response = await axios.post(`${apiEndpoint.value}/chat`, {
       message: message.content,
       model: selectedModel.value,
       multimodal: multimodalEnabled.value
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey.value}`,
+        'Content-Type': 'application/json'
+      }
     })
     
     messages.value.push({
@@ -333,18 +299,103 @@ const sendMessage = async () => {
   }
 }
 
+const triggerFileUpload = () => {
+  fileInput.value.click()
+}
+
+const triggerImageUpload = () => {
+  imageInput.value.click()
+}
+
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await axios.post(`${apiEndpoint.value}/upload`, formData, {
+      headers: {
+        'Authorization': `Bearer ${apiKey.value}`,
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    messages.value.push({
+      type: 'file',
+      content: response.data.fileUrl,
+      isUser: true
+    })
+    
+    await scrollToBottom()
+  } catch (error) {
+    console.error('Error uploading file:', error)
+    messages.value.push({
+      type: 'text',
+      content: 'Error uploading file: ' + error.message,
+      isUser: false
+    })
+  }
+}
+
+const handleImageUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  try {
+    // Create preview
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      previewImage.value = e.target.result
+    }
+    reader.readAsDataURL(file)
+    
+    // Upload image
+    const formData = new FormData()
+    formData.append('image', file)
+    
+    const response = await axios.post(`${apiEndpoint.value}/upload-image`, formData, {
+      headers: {
+        'Authorization': `Bearer ${apiKey.value}`,
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    messages.value.push({
+      type: 'image',
+      content: response.data.imageUrl,
+      isUser: true
+    })
+    
+    await scrollToBottom()
+  } catch (error) {
+    console.error('Error uploading image:', error)
+    messages.value.push({
+      type: 'text',
+      content: 'Error uploading image: ' + error.message,
+      isUser: false
+    })
+  }
+}
+
 const renderImage = async () => {
   if (!previewImage.value) return
   
   try {
     isRendering.value = true
-    const response = await axios.post('/api/render', {
+    const response = await axios.post(`${apiEndpoint.value}/render`, {
       image: previewImage.value,
       model: selectedModel.value,
-      prompt: newMessage.value
+      prompt: newMessage.value,
+      template: selectedTemplate.value
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey.value}`,
+        'Content-Type': 'application/json'
+      }
     })
     
-    // 更新预览和聊天记录
     if (response.data.renderedImage) {
       previewImage.value = response.data.renderedImage
       messages.value.push({
@@ -372,6 +423,46 @@ const renderImage = async () => {
     })
   } finally {
     isRendering.value = false
+  }
+}
+
+const startSynthesis = async () => {
+  if (!selectedDataSource.value || !dataCount.value || !outputFilename.value) {
+    messages.value.push({
+      type: 'text',
+      content: 'Please fill in all synthesis parameters',
+      isUser: false
+    })
+    return
+  }
+
+  try {
+    isSynthesizing.value = true
+    const response = await axios.post(`${apiEndpoint.value}/synthesize`, {
+      dataSource: selectedDataSource.value,
+      count: dataCount.value,
+      filename: outputFilename.value
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey.value}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    messages.value.push({
+      type: 'text',
+      content: `Data synthesis completed. ${response.data.message}`,
+      isUser: false
+    })
+  } catch (error) {
+    console.error('Error during synthesis:', error)
+    messages.value.push({
+      type: 'text',
+      content: 'Error during synthesis: ' + error.message,
+      isUser: false
+    })
+  } finally {
+    isSynthesizing.value = false
   }
 }
 
@@ -403,126 +494,13 @@ const exportChat = () => {
   URL.revokeObjectURL(url)
 }
 
-const triggerFileUpload = () => {
-  fileInput.value.click()
-}
-
-const handleFileUpload = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-  
-  try {
-    const formData = new FormData()
-    formData.append('file', file)
-    
-    const response = await axios.post('/api/upload', formData, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('apiKey')}`,
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    
-    messages.value.push({
-      type: 'file',
-      content: response.data.fileUrl,
-      isUser: true
-    })
-    
-    await scrollToBottom()
-  } catch (error) {
-    console.error('Error uploading file:', error)
-    messages.value.push({
-      type: 'text',
-      content: 'Error uploading file: ' + error.message,
-      isUser: false
-    })
-  }
-}
-
-const triggerImageUpload = () => {
-  imageInput.value.click()
-}
-
-const handleImageUpload = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-  
-  try {
-    // Create preview
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      previewImage.value = e.target.result
-    }
-    reader.readAsDataURL(file)
-    
-    // Upload image
-    const formData = new FormData()
-    formData.append('image', file)
-    
-    const response = await axios.post('/api/upload-image', formData, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('apiKey')}`,
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    
-    messages.value.push({
-      type: 'image',
-      content: response.data.imageUrl,
-      isUser: true
-    })
-    
-    await scrollToBottom()
-  } catch (error) {
-    console.error('Error uploading image:', error)
-    messages.value.push({
-      type: 'text',
-      content: 'Error uploading image: ' + error.message,
-      isUser: false
-    })
-  }
-}
-
-const startSynthesis = async () => {
-  if (!selectedDataSource.value || !dataCount.value || !outputFilename.value) {
-    messages.value.push({
-      type: 'text',
-      content: 'Please fill in all synthesis parameters',
-      isUser: false
-    })
-    return
-  }
-
-  try {
-    isSynthesizing.value = true
-    const response = await axios.post('/api/synthesize', {
-      dataSource: selectedDataSource.value,
-      count: dataCount.value,
-      filename: outputFilename.value
-    })
-
-    messages.value.push({
-      type: 'text',
-      content: `Data synthesis completed. ${response.data.message}`,
-      isUser: false
-    })
-  } catch (error) {
-    console.error('Error during synthesis:', error)
-    messages.value.push({
-      type: 'text',
-      content: 'Error during synthesis: ' + error.message,
-      isUser: false
-    })
-  } finally {
-    isSynthesizing.value = false
-  }
-}
-
 onMounted(() => {
   // Load saved settings from localStorage
   const savedSettings = localStorage.getItem('chatSettings')
   if (savedSettings) {
     const settings = JSON.parse(savedSettings)
+    apiEndpoint.value = settings.apiEndpoint || 'http://localhost:8000'
+    apiKey.value = settings.apiKey || ''
     selectedModel.value = settings.model || 'gpt-4'
     multimodalEnabled.value = settings.multimodal ?? true
   }

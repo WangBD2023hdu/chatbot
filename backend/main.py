@@ -90,19 +90,29 @@ async def render_image(
         image_data = request.get("image")
         model = request.get("model", "gpt-4")
         prompt = request.get("prompt", "")
+        template = request.get("template", "template1")
         
         # 解码base64图片
         image_data = image_data.split(",")[1]  # 移除data:image/jpeg;base64,前缀
         image_bytes = base64.b64decode(image_data)
         image = Image.open(io.BytesIO(image_bytes))
         
-        # 根据选择的模型处理图片
+        # 根据选择的模型和模板处理图片
         if model.startswith("gpt"):
             # 使用OpenAI的DALL-E进行图像处理
             client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            
+            # 根据模板调整提示词
+            template_prompts = {
+                "template1": "Apply a professional business style to the image",
+                "template2": "Transform the image into an artistic painting",
+                "template3": "Create a modern minimalist version of the image"
+            }
+            enhanced_prompt = f"{template_prompts.get(template, '')} {prompt}"
+            
             response = client.images.edit(
                 image=io.BytesIO(image_bytes),
-                prompt=prompt,
+                prompt=enhanced_prompt,
                 n=1,
                 size="1024x1024"
             )
@@ -111,6 +121,15 @@ async def render_image(
         elif model == "claude":
             # 使用Claude进行图像分析
             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            
+            # 根据模板调整分析提示
+            template_analysis = {
+                "template1": "Analyze this image from a business perspective",
+                "template2": "Analyze this image from an artistic perspective",
+                "template3": "Analyze this image from a design perspective"
+            }
+            enhanced_prompt = f"{template_analysis.get(template, '')} {prompt}"
+            
             response = client.messages.create(
                 model="claude-3-opus-20240229",
                 max_tokens=1000,
@@ -128,7 +147,7 @@ async def render_image(
                             },
                             {
                                 "type": "text",
-                                "text": f"请分析这张图片并回答：{prompt}"
+                                "text": enhanced_prompt
                             }
                         ]
                     }
@@ -150,7 +169,7 @@ async def render_image(
             
             return {
                 "renderedImage": f"data:image/png;base64,{rendered_base64}",
-                "textResponse": f"图片已根据提示词 '{prompt}' 进行处理"
+                "textResponse": f"图片已根据模板 '{template}' 和提示词 '{prompt}' 进行处理"
             }
         
     except Exception as e:
