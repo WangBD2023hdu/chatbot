@@ -117,6 +117,17 @@
         <!-- Image Preview Window -->
         <div class="mb-6">
           <h3 class="text-sm font-medium text-gray-700 mb-2">Image Preview</h3>
+          <!-- Template Selection -->
+          <div class="mb-2">
+            <select
+              v-model="selectedTemplate"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="template1">Template 1</option>
+              <option value="template2">Template 2</option>
+              <option value="template3">Template 3</option>
+            </select>
+          </div>
           <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 h-64 flex items-center justify-center bg-gray-50">
             <div v-if="previewImage" class="w-full h-full flex items-center justify-center">
               <img :src="previewImage" class="max-h-full max-w-full object-contain" />
@@ -140,75 +151,103 @@
           </div>
         </div>
 
-        <!-- API Settings -->
-        <div class="mb-6">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">API Settings</h3>
-          <div class="space-y-2">
-            <div class="flex flex-col">
-              <label class="text-sm text-gray-600 mb-1">API Endpoint</label>
-              <input
-                v-model="apiEndpoint"
-                type="text"
-                placeholder="https://api.example.com/chat"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div class="flex flex-col">
-              <label class="text-sm text-gray-600 mb-1">API Key</label>
-              <input
-                v-model="apiKey"
-                type="password"
-                placeholder="Enter your API key"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Model Settings -->
-        <div class="mb-6">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Model Settings</h3>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-gray-600">Multimodal Support</span>
-              <button
-                @click="toggleMultimodal"
-                :class="['relative inline-flex h-6 w-11 items-center rounded-full', 
-                        multimodalEnabled ? 'bg-blue-500' : 'bg-gray-200']"
-              >
-                <span
-                  :class="['inline-block h-4 w-4 transform rounded-full bg-white transition', 
-                          multimodalEnabled ? 'translate-x-6' : 'translate-x-1']"
-                ></span>
-              </button>
-            </div>
-            <div class="flex flex-col">
-              <label class="text-sm text-gray-600 mb-1">Model</label>
+        <!-- Settings Panel -->
+        <div class="p-4 border-b border-gray-200">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Settings</h3>
+          <div class="space-y-4">
+            <!-- Model Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
               <select
                 v-model="selectedModel"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="gpt-4">GPT-4</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                 <option value="claude">Claude</option>
               </select>
             </div>
+
+            <!-- Multimodal Support Toggle -->
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-700">Multimodal Support</span>
+              <button
+                @click="toggleMultimodal"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
+                  multimodalEnabled ? 'bg-blue-500' : 'bg-gray-200'
+                ]"
+              >
+                <span
+                  :class="[
+                    'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    multimodalEnabled ? 'translate-x-5' : 'translate-x-0'
+                  ]"
+                />
+              </button>
+            </div>
+
+            <!-- Data Synthesis Controls -->
+            <div class="grid grid-cols-3 gap-2">
+              <!-- Data Source Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Data Source</label>
+                <select
+                  v-model="selectedDataSource"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="source1">Source 1</option>
+                  <option value="source2">Source 2</option>
+                  <option value="source3">Source 3</option>
+                </select>
+              </div>
+
+              <!-- Data Count Input -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Data Count</label>
+                <input
+                  v-model="dataCount"
+                  type="number"
+                  min="1"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Count"
+                />
+              </div>
+
+              <!-- Output Filename Input -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Output Filename</label>
+                <input
+                  v-model="outputFilename"
+                  type="text"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Filename"
+                />
+              </div>
+            </div>
+
+            <!-- Start Synthesis Button -->
+            <button
+              @click="startSynthesis"
+              :disabled="isSynthesizing"
+              class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
+            >
+              {{ isSynthesizing ? 'Synthesizing...' : 'Start Synthesis' }}
+            </button>
           </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div>
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Quick Actions</h3>
-          <div class="grid grid-cols-2 gap-2">
+        <!-- Chat Controls -->
+        <div class="p-4 border-b border-gray-200">
+          <div class="flex space-x-2">
             <button
               @click="clearChat"
-              class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
+              class="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
             >
               Clear Chat
             </button>
             <button
               @click="exportChat"
-              class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
+              class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
             >
               Export Chat
             </button>
@@ -227,8 +266,6 @@ import { useScroll } from '@vueuse/core'
 const messages = ref([])
 const newMessage = ref('')
 const isLoading = ref(false)
-const apiEndpoint = ref('')
-const apiKey = ref('')
 const multimodalEnabled = ref(true)
 const selectedModel = ref('gpt-4')
 const messagesContainer = ref(null)
@@ -236,6 +273,15 @@ const previewImage = ref(null)
 const isRendering = ref(false)
 const fileInput = ref(null)
 const imageInput = ref(null)
+
+// 新增数据合成相关状态
+const selectedDataSource = ref('source1')
+const dataCount = ref(100)
+const outputFilename = ref('synthesized_data')
+const isSynthesizing = ref(false)
+
+// 新增模板选择状态
+const selectedTemplate = ref('template1')
 
 const { y: scrollY } = useScroll(messagesContainer)
 
@@ -263,15 +309,10 @@ const sendMessage = async () => {
   
   try {
     isLoading.value = true
-    const response = await axios.post(apiEndpoint.value, {
+    const response = await axios.post('/api/chat', {
       message: message.content,
       model: selectedModel.value,
       multimodal: multimodalEnabled.value
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey.value}`,
-        'Content-Type': 'application/json'
-      }
     })
     
     messages.value.push({
@@ -297,15 +338,10 @@ const renderImage = async () => {
   
   try {
     isRendering.value = true
-    const response = await axios.post(`${apiEndpoint.value}/render`, {
+    const response = await axios.post('/api/render', {
       image: previewImage.value,
       model: selectedModel.value,
       prompt: newMessage.value
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey.value}`,
-        'Content-Type': 'application/json'
-      }
     })
     
     // 更新预览和聊天记录
@@ -379,9 +415,9 @@ const handleFileUpload = async (event) => {
     const formData = new FormData()
     formData.append('file', file)
     
-    const response = await axios.post(`${apiEndpoint.value}/upload`, formData, {
+    const response = await axios.post('/api/upload', formData, {
       headers: {
-        'Authorization': `Bearer ${apiKey.value}`,
+        'Authorization': `Bearer ${localStorage.getItem('apiKey')}`,
         'Content-Type': 'multipart/form-data'
       }
     })
@@ -423,9 +459,9 @@ const handleImageUpload = async (event) => {
     const formData = new FormData()
     formData.append('image', file)
     
-    const response = await axios.post(`${apiEndpoint.value}/upload-image`, formData, {
+    const response = await axios.post('/api/upload-image', formData, {
       headers: {
-        'Authorization': `Bearer ${apiKey.value}`,
+        'Authorization': `Bearer ${localStorage.getItem('apiKey')}`,
         'Content-Type': 'multipart/form-data'
       }
     })
@@ -447,13 +483,46 @@ const handleImageUpload = async (event) => {
   }
 }
 
+const startSynthesis = async () => {
+  if (!selectedDataSource.value || !dataCount.value || !outputFilename.value) {
+    messages.value.push({
+      type: 'text',
+      content: 'Please fill in all synthesis parameters',
+      isUser: false
+    })
+    return
+  }
+
+  try {
+    isSynthesizing.value = true
+    const response = await axios.post('/api/synthesize', {
+      dataSource: selectedDataSource.value,
+      count: dataCount.value,
+      filename: outputFilename.value
+    })
+
+    messages.value.push({
+      type: 'text',
+      content: `Data synthesis completed. ${response.data.message}`,
+      isUser: false
+    })
+  } catch (error) {
+    console.error('Error during synthesis:', error)
+    messages.value.push({
+      type: 'text',
+      content: 'Error during synthesis: ' + error.message,
+      isUser: false
+    })
+  } finally {
+    isSynthesizing.value = false
+  }
+}
+
 onMounted(() => {
   // Load saved settings from localStorage
   const savedSettings = localStorage.getItem('chatSettings')
   if (savedSettings) {
     const settings = JSON.parse(savedSettings)
-    apiEndpoint.value = settings.apiEndpoint || ''
-    apiKey.value = settings.apiKey || ''
     selectedModel.value = settings.model || 'gpt-4'
     multimodalEnabled.value = settings.multimodal ?? true
   }

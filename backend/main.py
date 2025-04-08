@@ -9,6 +9,8 @@ import base64
 from PIL import Image
 import io
 import requests
+import json
+from datetime import datetime
 
 load_dotenv()
 
@@ -27,6 +29,10 @@ app.add_middleware(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")
+
+# 数据存储目录
+DATA_DIR = "synthesized_data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
 def get_model_client(model: str):
     if model.startswith("gpt"):
@@ -147,6 +153,43 @@ async def render_image(
                 "textResponse": f"图片已根据提示词 '{prompt}' 进行处理"
             }
         
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/synthesize")
+async def synthesize_data(
+    request: dict,
+    authorization: Optional[str] = Header(None)
+):
+    try:
+        data_source = request.get("dataSource")
+        count = request.get("count")
+        filename = request.get("filename")
+
+        if not all([data_source, count, filename]):
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+
+        # 生成示例数据
+        synthesized_data = []
+        for i in range(count):
+            item = {
+                "id": i + 1,
+                "source": data_source,
+                "timestamp": datetime.now().isoformat(),
+                "value": f"Sample data {i + 1}"
+            }
+            synthesized_data.append(item)
+
+        # 保存数据到文件
+        output_path = os.path.join(DATA_DIR, f"{filename}.json")
+        with open(output_path, "w") as f:
+            json.dump(synthesized_data, f, indent=2)
+
+        return {
+            "message": f"Successfully synthesized {count} data points from {data_source}",
+            "file_path": output_path
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
