@@ -139,7 +139,7 @@
           <div class="mt-2 flex justify-center space-x-2">
             <button
               @click="renderImage"
-              :disabled="!previewImage || isRendering"
+              :disabled="isRenderButtonDisabled"
               class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm disabled:opacity-50"
             >
               {{ isRendering ? 'Rendering...' : 'Render Image' }}
@@ -299,7 +299,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import axios from 'axios'
 import { useScroll } from '@vueuse/core'
 import CodeEditor from './CodeEditor.vue'
@@ -487,7 +487,14 @@ const handleImageUpload = async (event) => {
 }
 
 const renderImage = async () => {
-  if (!previewImage.value) return
+  if (!previewImage.value) {
+    messages.value.push({
+      type: 'text',
+      content: 'Please upload an image first',
+      isUser: false
+    })
+    return
+  }
 
   try {
     isRendering.value = true
@@ -614,6 +621,11 @@ const handleCodeUpdate = (code) => {
   console.log('Code updated:', code)
   // 这里可以添加代码更新后的处理逻辑
 }
+
+// 修改渲染按钮的禁用条件
+const isRenderButtonDisabled = computed(() => {
+  return !previewImage.value || isRendering.value
+})
 
 onMounted(() => {
   // Load saved settings from localStorage

@@ -6,8 +6,9 @@ import requests
 import base64
 import io
 import os
-from typing import Optional
+from typing import Optional, Dict, List
 import json
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
@@ -24,6 +25,20 @@ app.add_middleware(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")
+
+# 存储聊天消息的缓存
+chat_messages_cache: Dict[str, List[Dict]] = {}
+CACHE_EXPIRY = timedelta(minutes=30)  # 缓存过期时间
+
+# 清理过期缓存的函数
+def cleanup_expired_cache():
+    current_time = datetime.now()
+    expired_keys = []
+    for key, value in chat_messages_cache.items():
+        if current_time - value['timestamp'] > CACHE_EXPIRY:
+            expired_keys.append(key)
+    for key in expired_keys:
+        del chat_messages_cache[key]
 
 # Template configurations
 TEMPLATE_PROMPTS = {
@@ -52,6 +67,27 @@ async def chat(message: dict, authorization: str = Depends(verify_token)):
     try:
         model = message.get("model", "gpt-4")
         multimodal = message.get("multimodal", True)
+        text = message.get("text", "")
+        image = message.get("image", None)
+        
+        # 清理过期缓存
+        cleanup_expired_cache()
+        
+        # 存储聊天消息
+        token = authorization.split(" ")[1]
+        if token not in chat_messages_cache:
+            chat_messages_cache[token] = {
+                'messages': [],
+                'timestamp': datetime.now()
+            }
+        
+        # 添加用户消息
+        chat_messages_cache[token]['messages'].append({
+            'type': 'user',
+            'text': text,
+            'image': image,
+            'timestamp': datetime.now()
+        })
         
         if model == "gpt-4":
             # OpenAI API call
@@ -61,14 +97,14 @@ async def chat(message: dict, authorization: str = Depends(verify_token)):
             }
             data = {
                 "model": "gpt-4",
-                "messages": [{"role": "user", "content": message["message"]}]
+                "messages": [{"role": "user", "content": text}]
             }
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=data
             )
-            return {"response": response.json()["choices"][0]["message"]["content"]}
+            response_text = response.json()["choices"][0]["message"]["content"]
             
         elif model == "claude":
             # Anthropic API call
@@ -77,7 +113,7 @@ async def chat(message: dict, authorization: str = Depends(verify_token)):
                 "Content-Type": "application/json"
             }
             data = {
-                "prompt": f"\n\nHuman: {message['message']}\n\nAssistant:",
+                "prompt": f"\n\nHuman: {text}\n\nAssistant:",
                 "max_tokens_to_sample": 1000
             }
             response = requests.post(
@@ -85,7 +121,19 @@ async def chat(message: dict, authorization: str = Depends(verify_token)):
                 headers=headers,
                 json=data
             )
-            return {"response": response.json()["completion"]}
+            response_text = response.json()["completion"]
+        
+        # 添加助手响应
+        chat_messages_cache[token]['messages'].append({
+            'type': 'assistant',
+            'text': response_text,
+            'timestamp': datetime.now()
+        })
+        
+        return {
+            "response": response_text,
+            "messageId": len(chat_messages_cache[token]['messages']) - 1
+        }
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,6 +177,24 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
         model = request.get("model", "gpt-4")
         prompt = request.get("prompt", "")
         template = request.get("template", "template1")
+        token = authorization.split(" ")[1]
+
+        if not image_data:
+            raise HTTPException(status_code=400, detail="No image provided")
+        
+        # 检查是否有聊天历史
+        if token not in chat_messages_cache or not chat_messages_cache[token]['messages']:
+            raise HTTPException(
+                status_code=400, 
+                detail="No chat history found. Please send a message first."
+            )
+        
+        # 获取最近的聊天消息
+        recent_messages = chat_messages_cache[token]['messages'][-5:]  # 获取最近5条消息
+        chat_context = "\n".join([
+            f"{'User' if msg['type'] == 'user' else 'Assistant'}: {msg['text']}"
+            for msg in recent_messages
+        ])
         
         # Decode base64 image
         image_bytes = base64.b64decode(image_data.split(",")[1])
@@ -136,8 +202,9 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
         
         # Process image based on model and template
         if model == "gpt-4":
-            # Use DALL-E for image generation
-            enhanced_prompt = TEMPLATE_PROMPTS[template]["gpt"].format(prompt=prompt)
+            # 使用聊天上下文增强提示
+            enhanced_prompt = f"Chat Context:\n{chat_context}\n\nBased on the above context, {TEMPLATE_PROMPTS[template]['gpt'].format(prompt=prompt)}"
+            
             headers = {
                 "Authorization": f"Bearer {OPENAI_API_KEY}",
                 "Content-Type": "application/json"
@@ -155,8 +222,9 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
             rendered_image = response.json()["data"][0]["url"]
             
         elif model == "claude":
-            # Use Claude for image analysis
-            analysis_prompt = TEMPLATE_PROMPTS[template]["claude"].format(prompt=prompt)
+            # 使用聊天上下文进行分析
+            analysis_prompt = f"Chat Context:\n{chat_context}\n\nBased on the above context, {TEMPLATE_PROMPTS[template]['claude'].format(prompt=prompt)}"
+            
             headers = {
                 "x-api-key": ANTHROPIC_API_KEY,
                 "Content-Type": "application/json"
@@ -180,7 +248,7 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
             
         return {
             "renderedImage": rendered_image,
-            "textResponse": f"Image rendered using {template} template"
+            "textResponse": f"Image rendered using {template} template with context from chat history"
         }
         
     except Exception as e:
