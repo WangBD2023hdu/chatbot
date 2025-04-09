@@ -51,6 +51,26 @@
       <!-- Input Area -->
       <div class="border-t border-gray-200 p-4 bg-white">
         <div class="flex space-x-2">
+          <button
+            @click="triggerFileUpload"
+            class="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Upload File"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+          </button>
+          <button
+            @click="triggerImageUpload"
+            class="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Upload Image"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </button>
           <input
             v-model="newMessage"
             @keyup.enter="sendMessage"
@@ -66,6 +86,20 @@
             Send
           </button>
         </div>
+        <!-- Hidden file inputs -->
+        <input
+          type="file"
+          ref="fileInput"
+          @change="handleFileUpload"
+          class="hidden"
+        />
+        <input
+          type="file"
+          ref="imageInput"
+          @change="handleImageUpload"
+          accept="image/*"
+          class="hidden"
+        />
       </div>
     </div>
 
@@ -102,13 +136,19 @@
               <p>No image selected</p>
             </div>
           </div>
-          <div class="mt-2 flex justify-center">
+          <div class="mt-2 flex justify-center space-x-2">
             <button
               @click="renderImage"
               :disabled="!previewImage || isRendering"
               class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm disabled:opacity-50"
             >
               {{ isRendering ? 'Rendering...' : 'Render Image' }}
+            </button>
+            <button
+              @click="showCodeEditor = true"
+              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+            >
+              Edit Code
             </button>
           </div>
         </div>
@@ -149,17 +189,38 @@
             </div>
 
             <!-- Data Synthesis Controls -->
-            <div class="grid grid-cols-3 gap-2">
-              <!-- Data Source Selection -->
+            <div class="grid grid-cols-2 gap-2">
+              <!-- Language Selection -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Data Source</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Language</label>
                 <select
-                  v-model="selectedDataSource"
+                  v-model="selectedLanguage"
                   class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="source1">Source 1</option>
-                  <option value="source2">Source 2</option>
-                  <option value="source3">Source 3</option>
+                  <option value="en">English</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="es">Spanish</option>
+                </select>
+              </div>
+
+              <!-- Scene Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Scene</label>
+                <select
+                  v-model="selectedScene"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="business">Business</option>
+                  <option value="education">Education</option>
+                  <option value="entertainment">Entertainment</option>
+                  <option value="technology">Technology</option>
+                  <option value="health">Health</option>
+                  <option value="travel">Travel</option>
+                  <option value="food">Food</option>
                 </select>
               </div>
 
@@ -188,13 +249,22 @@
             </div>
 
             <!-- Start Synthesis Button -->
-            <button
-              @click="startSynthesis"
-              :disabled="isSynthesizing"
-              class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-            >
-              {{ isSynthesizing ? 'Synthesizing...' : 'Start Synthesis' }}
-            </button>
+            <div class="flex space-x-2">
+              <button
+                @click="startSynthesis"
+                :disabled="isSynthesizing || !selectedLanguage || !selectedScene || !dataCount || !outputFilename"
+                class="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
+              >
+                {{ isSynthesizing ? 'Synthesizing...' : 'Start Synthesis' }}
+              </button>
+              <button
+                v-if="isSynthesizing"
+                @click="stopSynthesis"
+                class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              >
+                Stop
+              </button>
+            </div>
           </div>
         </div>
 
@@ -219,12 +289,20 @@
       </div>
     </div>
   </div>
+  <CodeEditor
+    v-if="showCodeEditor"
+    :api-endpoint="apiEndpoint"
+    :api-key="apiKey"
+    @close="showCodeEditor = false"
+    @update="handleCodeUpdate"
+  />
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import { useScroll } from '@vueuse/core'
+import CodeEditor from './CodeEditor.vue'
 
 const messages = ref([])
 const newMessage = ref('')
@@ -237,12 +315,18 @@ const messagesContainer = ref(null)
 const previewImage = ref(null)
 const isRendering = ref(false)
 const selectedTemplate = ref('template1')
+const showCodeEditor = ref(false)
 
 // 数据合成相关状态
-const selectedDataSource = ref('source1')
+const selectedLanguage = ref('en')
+const selectedScene = ref('business')
 const dataCount = ref(100)
 const outputFilename = ref('synthesized_data')
 const isSynthesizing = ref(false)
+
+// API configuration
+const apiEndpoint = ref('http://localhost:8000')
+const apiKey = ref('your-api-key-here') // 这里应该替换为实际的 API key
 
 const { y: scrollY } = useScroll(messagesContainer)
 
@@ -255,47 +339,72 @@ const scrollToBottom = async () => {
 }
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim()) return
-  
-  const message = {
-    type: 'text',
-    content: newMessage.value,
-    isUser: true
-  }
-  
-  messages.value.push(message)
-  newMessage.value = ''
-  
-  await scrollToBottom()
-  
+  if (!newMessage.value.trim() && !previewImage.value) return
+
   try {
     isLoading.value = true
-    const response = await axios.post(`${apiEndpoint.value}/chat`, {
-      message: message.content,
+    
+    // Prepare the message content
+    const messageContent = {
+      text: newMessage.value,
+      image: previewImage.value,
       model: selectedModel.value,
-      multimodal: multimodalEnabled.value
-    }, {
+      multimodal: multimodalEnabled.value,
+      template: selectedTemplate.value
+    }
+
+    // Add user message to chat
+    messages.value.push({
+      type: 'text',
+      content: newMessage.value,
+      isUser: true
+    })
+
+    if (previewImage.value) {
+      messages.value.push({
+        type: 'image',
+        content: previewImage.value,
+        isUser: true
+      })
+    }
+
+    // Send to API
+    const response = await axios.post(`${apiEndpoint.value}/chat`, messageContent, {
       headers: {
         'Authorization': `Bearer ${apiKey.value}`,
         'Content-Type': 'application/json'
       }
     })
-    
-    messages.value.push({
-      type: 'text',
-      content: response.data.response,
-      isUser: false
-    })
+
+    // Handle response
+    if (response.data.response) {
+      messages.value.push({
+        type: 'text',
+        content: response.data.response,
+        isUser: false
+      })
+    }
+
+    if (response.data.image) {
+      messages.value.push({
+        type: 'image',
+        content: response.data.image,
+        isUser: false
+      })
+      previewImage.value = response.data.image
+    }
+
   } catch (error) {
     console.error('Error sending message:', error)
     messages.value.push({
       type: 'text',
-      content: 'Sorry, there was an error processing your message.',
+      content: 'Error: ' + error.message,
       isUser: false
     })
   } finally {
     isLoading.value = false
-    await scrollToBottom()
+    newMessage.value = ''
+    scrollToBottom()
   }
 }
 
@@ -310,25 +419,28 @@ const triggerImageUpload = () => {
 const handleFileUpload = async (event) => {
   const file = event.target.files[0]
   if (!file) return
-  
+
   try {
     const formData = new FormData()
     formData.append('file', file)
-    
+
     const response = await axios.post(`${apiEndpoint.value}/upload`, formData, {
       headers: {
         'Authorization': `Bearer ${apiKey.value}`,
         'Content-Type': 'multipart/form-data'
       }
     })
-    
+
+    const fileUrl = `${apiEndpoint.value}${response.data.fileUrl}`
     messages.value.push({
       type: 'file',
-      content: response.data.fileUrl,
+      content: fileUrl,
       isUser: true
     })
-    
-    await scrollToBottom()
+
+    // Add file content to the next message
+    newMessage.value = `File uploaded: ${file.name}\n${newMessage.value}`
+    scrollToBottom()
   } catch (error) {
     console.error('Error uploading file:', error)
     messages.value.push({
@@ -342,33 +454,28 @@ const handleFileUpload = async (event) => {
 const handleImageUpload = async (event) => {
   const file = event.target.files[0]
   if (!file) return
-  
+
   try {
-    // Create preview
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      previewImage.value = e.target.result
-    }
-    reader.readAsDataURL(file)
-    
-    // Upload image
     const formData = new FormData()
     formData.append('image', file)
-    
+
     const response = await axios.post(`${apiEndpoint.value}/upload-image`, formData, {
       headers: {
         'Authorization': `Bearer ${apiKey.value}`,
         'Content-Type': 'multipart/form-data'
       }
     })
-    
+
+    previewImage.value = `${apiEndpoint.value}${response.data.imageUrl}`
     messages.value.push({
       type: 'image',
-      content: response.data.imageUrl,
+      content: previewImage.value,
       isUser: true
     })
-    
-    await scrollToBottom()
+
+    // Add image description to the next message
+    newMessage.value = `Image uploaded: ${file.name}\n${newMessage.value}`
+    scrollToBottom()
   } catch (error) {
     console.error('Error uploading image:', error)
     messages.value.push({
@@ -381,7 +488,7 @@ const handleImageUpload = async (event) => {
 
 const renderImage = async () => {
   if (!previewImage.value) return
-  
+
   try {
     isRendering.value = true
     const response = await axios.post(`${apiEndpoint.value}/render`, {
@@ -395,7 +502,7 @@ const renderImage = async () => {
         'Content-Type': 'application/json'
       }
     })
-    
+
     if (response.data.renderedImage) {
       previewImage.value = response.data.renderedImage
       messages.value.push({
@@ -404,7 +511,6 @@ const renderImage = async () => {
         isUser: false
       })
     }
-    
     if (response.data.textResponse) {
       messages.value.push({
         type: 'text',
@@ -412,8 +518,6 @@ const renderImage = async () => {
         isUser: false
       })
     }
-    
-    await scrollToBottom()
   } catch (error) {
     console.error('Error rendering image:', error)
     messages.value.push({
@@ -427,10 +531,10 @@ const renderImage = async () => {
 }
 
 const startSynthesis = async () => {
-  if (!selectedDataSource.value || !dataCount.value || !outputFilename.value) {
+  if (!selectedLanguage.value || !selectedScene.value || !dataCount.value || !outputFilename.value) {
     messages.value.push({
       type: 'text',
-      content: 'Please fill in all synthesis parameters',
+      content: 'Please select language, scene, data count and output filename',
       isUser: false
     })
     return
@@ -439,7 +543,8 @@ const startSynthesis = async () => {
   try {
     isSynthesizing.value = true
     const response = await axios.post(`${apiEndpoint.value}/synthesize`, {
-      dataSource: selectedDataSource.value,
+      language: selectedLanguage.value,
+      scene: selectedScene.value,
       count: dataCount.value,
       filename: outputFilename.value
     }, {
@@ -451,7 +556,7 @@ const startSynthesis = async () => {
 
     messages.value.push({
       type: 'text',
-      content: `Data synthesis completed. ${response.data.message}`,
+      content: response.data.message,
       isUser: false
     })
   } catch (error) {
@@ -464,6 +569,16 @@ const startSynthesis = async () => {
   } finally {
     isSynthesizing.value = false
   }
+}
+
+const stopSynthesis = () => {
+  isSynthesizing.value = false
+  // 这里可以添加取消请求的逻辑
+  messages.value.push({
+    type: 'text',
+    content: 'Synthesis stopped by user',
+    isUser: false
+  })
 }
 
 const toggleMultimodal = () => {
@@ -492,6 +607,12 @@ const exportChat = () => {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+const handleCodeUpdate = (code) => {
+  // 处理代码更新
+  console.log('Code updated:', code)
+  // 这里可以添加代码更新后的处理逻辑
 }
 
 onMounted(() => {

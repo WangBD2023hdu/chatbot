@@ -1,22 +1,17 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
-import os
-import openai
-import anthropic
-from dotenv import load_dotenv
-import base64
+from fastapi.responses import JSONResponse
 from PIL import Image
-import io
 import requests
+import base64
+import io
+import os
+from typing import Optional
 import json
-from datetime import datetime
-
-load_dotenv()
 
 app = FastAPI()
 
-# CORS设置
+# CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,190 +20,268 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 配置API密钥
+# API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")
 
-# 数据存储目录
-DATA_DIR = "synthesized_data"
-os.makedirs(DATA_DIR, exist_ok=True)
+# Template configurations
+TEMPLATE_PROMPTS = {
+    "template1": {
+        "gpt": "Create a professional business image with the following elements: {prompt}",
+        "claude": "Analyze this image from a business perspective: {prompt}"
+    },
+    "template2": {
+        "gpt": "Create an artistic painting with the following elements: {prompt}",
+        "claude": "Analyze this image from an artistic perspective: {prompt}"
+    },
+    "template3": {
+        "gpt": "Create a modern minimalist design with the following elements: {prompt}",
+        "claude": "Analyze this image from a minimalist perspective: {prompt}"
+    }
+}
 
-def get_model_client(model: str):
-    if model.startswith("gpt"):
-        return openai.OpenAI(api_key=OPENAI_API_KEY)
-    elif model == "claude":
-        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported model")
-
-@app.post("/chat")
-async def chat(
-    request: dict,
-    authorization: Optional[str] = Header(None)
-):
+# Authorization dependency
+async def verify_token(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
-    api_key = authorization.split(" ")[1]
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key is required")
+    return authorization.split(" ")[1]
 
+@app.post("/chat")
+async def chat(message: dict, authorization: str = Depends(verify_token)):
     try:
-        message = request.get("message")
-        model = request.get("model", "gpt-4")
-        multimodal = request.get("multimodal", True)
-
-        client = get_model_client(model)
+        model = message.get("model", "gpt-4")
+        multimodal = message.get("multimodal", True)
         
-        if model.startswith("gpt"):
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": message}]
+        if model == "gpt-4":
+            # OpenAI API call
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "gpt-4",
+                "messages": [{"role": "user", "content": message["message"]}]
+            }
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=data
             )
-            return {"response": response.choices[0].message.content}
-        
+            return {"response": response.json()["choices"][0]["message"]["content"]}
+            
         elif model == "claude":
-            response = client.messages.create(
-                model="claude-2",
-                messages=[{"role": "user", "content": message}]
+            # Anthropic API call
+            headers = {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "Content-Type": "application/json"
+            }
+            data = {
+                "prompt": f"\n\nHuman: {message['message']}\n\nAssistant:",
+                "max_tokens_to_sample": 1000
+            }
+            response = requests.post(
+                "https://api.anthropic.com/v1/complete",
+                headers=headers,
+                json=data
             )
-            return {"response": response.content[0].text}
+            return {"response": response.json()["completion"]}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...), authorization: str = Depends(verify_token)):
+    try:
+        # Save file to temporary location
+        file_path = f"uploads/{file.filename}"
+        os.makedirs("uploads", exist_ok=True)
+        
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+            
+        return {"fileUrl": f"/files/{file.filename}"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload-image")
+async def upload_image(image: UploadFile = File(...), authorization: str = Depends(verify_token)):
+    try:
+        # Save image to temporary location
+        image_path = f"uploads/{image.filename}"
+        os.makedirs("uploads", exist_ok=True)
+        
+        with open(image_path, "wb") as buffer:
+            content = await image.read()
+            buffer.write(content)
+            
+        return {"imageUrl": f"/images/{image.filename}"}
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/render")
-async def render_image(
-    request: dict,
-    authorization: Optional[str] = Header(None)
-):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
+async def render_image(request: dict, authorization: str = Depends(verify_token)):
     try:
         image_data = request.get("image")
         model = request.get("model", "gpt-4")
         prompt = request.get("prompt", "")
         template = request.get("template", "template1")
         
-        # 解码base64图片
-        image_data = image_data.split(",")[1]  # 移除data:image/jpeg;base64,前缀
-        image_bytes = base64.b64decode(image_data)
+        # Decode base64 image
+        image_bytes = base64.b64decode(image_data.split(",")[1])
         image = Image.open(io.BytesIO(image_bytes))
         
-        # 根据选择的模型和模板处理图片
-        if model.startswith("gpt"):
-            # 使用OpenAI的DALL-E进行图像处理
-            client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            
-            # 根据模板调整提示词
-            template_prompts = {
-                "template1": "Apply a professional business style to the image",
-                "template2": "Transform the image into an artistic painting",
-                "template3": "Create a modern minimalist version of the image"
+        # Process image based on model and template
+        if model == "gpt-4":
+            # Use DALL-E for image generation
+            enhanced_prompt = TEMPLATE_PROMPTS[template]["gpt"].format(prompt=prompt)
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
             }
-            enhanced_prompt = f"{template_prompts.get(template, '')} {prompt}"
-            
-            response = client.images.edit(
-                image=io.BytesIO(image_bytes),
-                prompt=enhanced_prompt,
-                n=1,
-                size="1024x1024"
+            data = {
+                "prompt": enhanced_prompt,
+                "n": 1,
+                "size": "1024x1024"
+            }
+            response = requests.post(
+                "https://api.openai.com/v1/images/generations",
+                headers=headers,
+                json=data
             )
-            rendered_image_url = response.data[0].url
+            rendered_image = response.json()["data"][0]["url"]
             
         elif model == "claude":
-            # 使用Claude进行图像分析
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-            
-            # 根据模板调整分析提示
-            template_analysis = {
-                "template1": "Analyze this image from a business perspective",
-                "template2": "Analyze this image from an artistic perspective",
-                "template3": "Analyze this image from a design perspective"
+            # Use Claude for image analysis
+            analysis_prompt = TEMPLATE_PROMPTS[template]["claude"].format(prompt=prompt)
+            headers = {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "Content-Type": "application/json"
             }
-            enhanced_prompt = f"{template_analysis.get(template, '')} {prompt}"
-            
-            response = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": image_data
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": enhanced_prompt
-                            }
-                        ]
-                    }
-                ]
+            data = {
+                "prompt": f"\n\nHuman: {analysis_prompt}\n\nAssistant:",
+                "max_tokens_to_sample": 1000
+            }
+            response = requests.post(
+                "https://api.anthropic.com/v1/complete",
+                headers=headers,
+                json=data
             )
-            return {
-                "textResponse": response.content[0].text
-            }
-        
-        # 下载处理后的图片
-        if rendered_image_url:
-            response = requests.get(rendered_image_url)
-            rendered_image = Image.open(io.BytesIO(response.content))
+            text_response = response.json()["completion"]
             
-            # 转换为base64
-            buffered = io.BytesIO()
-            rendered_image.save(buffered, format="PNG")
-            rendered_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-            
+            # Return original image with analysis
             return {
-                "renderedImage": f"data:image/png;base64,{rendered_base64}",
-                "textResponse": f"图片已根据模板 '{template}' 和提示词 '{prompt}' 进行处理"
+                "renderedImage": image_data,
+                "textResponse": text_response
             }
+            
+        return {
+            "renderedImage": rendered_image,
+            "textResponse": f"Image rendered using {template} template"
+        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/synthesize")
-async def synthesize_data(
-    request: dict,
-    authorization: Optional[str] = Header(None)
-):
+async def synthesize_data(request: dict, authorization: str = Depends(verify_token)):
     try:
-        data_source = request.get("dataSource")
-        count = request.get("count")
-        filename = request.get("filename")
+        language = request.get("language", "en")
+        scene = request.get("scene", "business")
+        count = request.get("count", 100)
+        filename = request.get("filename", "synthesized_data")
+        
+        # Generate synthetic data based on parameters
+        # This is a placeholder - implement your actual data synthesis logic
+        synthetic_data = {
+            "language": language,
+            "scene": scene,
+            "count": count,
+            "filename": filename,
+            "status": "completed"
+        }
+        
+        # Save to file
+        with open(f"outputs/{filename}.json", "w") as f:
+            json.dump(synthetic_data, f)
+            
+        return {
+            "message": f"Successfully generated {count} {scene} samples in {language}",
+            "data": synthetic_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        if not all([data_source, count, filename]):
-            raise HTTPException(status_code=400, detail="Missing required parameters")
+# Static file serving endpoints
+@app.get("/files/{filename}")
+async def get_file(filename: str):
+    file_path = f"uploads/{filename}"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
 
-        # 生成示例数据
-        synthesized_data = []
-        for i in range(count):
-            item = {
-                "id": i + 1,
-                "source": data_source,
-                "timestamp": datetime.now().isoformat(),
-                "value": f"Sample data {i + 1}"
-            }
-            synthesized_data.append(item)
+@app.get("/images/{filename}")
+async def get_image(filename: str):
+    image_path = f"uploads/{filename}"
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(image_path)
 
-        # 保存数据到文件
-        output_path = os.path.join(DATA_DIR, f"{filename}.json")
-        with open(output_path, "w") as f:
-            json.dump(synthesized_data, f, indent=2)
+# 添加代码管理相关的路由
+@app.get("/code")
+async def get_code():
+    try:
+        # 从文件系统或数据库获取代码
+        css_code = ""
+        js_code = ""
+        try:
+            with open("static/css/custom.css", "r") as f:
+                css_code = f.read()
+        except FileNotFoundError:
+            pass
+
+        try:
+            with open("static/js/custom.js", "r") as f:
+                js_code = f.read()
+        except FileNotFoundError:
+            pass
 
         return {
-            "message": f"Successfully synthesized {count} data points from {data_source}",
-            "file_path": output_path
+            "css": css_code,
+            "js": js_code
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/code/css")
+async def save_css(code: dict):
+    try:
+        # 确保目录存在
+        os.makedirs("static/css", exist_ok=True)
+        
+        # 保存 CSS 代码
+        with open("static/css/custom.css", "w") as f:
+            f.write(code["code"])
+        
+        return {"message": "CSS code saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/code/js")
+async def save_js(code: dict):
+    try:
+        # 确保目录存在
+        os.makedirs("static/js", exist_ok=True)
+        
+        # 保存 JavaScript 代码
+        with open("static/js/custom.js", "w") as f:
+            f.write(code["code"])
+        
+        return {"message": "JavaScript code saved successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
