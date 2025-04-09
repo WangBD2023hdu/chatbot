@@ -9,6 +9,7 @@ import os
 from typing import Optional, Dict, List
 import json
 from datetime import datetime, timedelta
+from redis_manager import redis_manager
 
 app = FastAPI()
 
@@ -25,20 +26,6 @@ app.add_middleware(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")
-
-# 存储聊天消息的缓存
-chat_messages_cache: Dict[str, List[Dict]] = {}
-CACHE_EXPIRY = timedelta(minutes=30)  # 缓存过期时间
-
-# 清理过期缓存的函数
-def cleanup_expired_cache():
-    current_time = datetime.now()
-    expired_keys = []
-    for key, value in chat_messages_cache.items():
-        if current_time - value['timestamp'] > CACHE_EXPIRY:
-            expired_keys.append(key)
-    for key in expired_keys:
-        del chat_messages_cache[key]
 
 # Template configurations
 TEMPLATE_PROMPTS = {
@@ -65,29 +52,24 @@ async def verify_token(authorization: str = Header(None)):
 @app.post("/chat")
 async def chat(message: dict, authorization: str = Depends(verify_token)):
     try:
+        token = authorization.split(" ")[1]
         model = message.get("model", "gpt-4")
         multimodal = message.get("multimodal", True)
         text = message.get("text", "")
         image = message.get("image", None)
         
-        # 清理过期缓存
-        cleanup_expired_cache()
+        # 更新全局使用统计
+        total_messages = redis_manager.increment_global_counter('total_messages')
+        model_messages = redis_manager.increment_global_counter(f'model_messages:{model}')
         
-        # 存储聊天消息
-        token = authorization.split(" ")[1]
-        if token not in chat_messages_cache:
-            chat_messages_cache[token] = {
-                'messages': [],
-                'timestamp': datetime.now()
-            }
-        
-        # 添加用户消息
-        chat_messages_cache[token]['messages'].append({
+        # 存储用户消息
+        user_message = {
             'type': 'user',
             'text': text,
             'image': image,
-            'timestamp': datetime.now()
-        })
+            'timestamp': datetime.now().isoformat()
+        }
+        redis_manager.store_message(token, user_message)
         
         if model == "gpt-4":
             # OpenAI API call
@@ -123,16 +105,27 @@ async def chat(message: dict, authorization: str = Depends(verify_token)):
             )
             response_text = response.json()["completion"]
         
-        # 添加助手响应
-        chat_messages_cache[token]['messages'].append({
+        # 存储助手响应
+        assistant_message = {
             'type': 'assistant',
             'text': response_text,
-            'timestamp': datetime.now()
+            'timestamp': datetime.now().isoformat()
+        }
+        redis_manager.store_message(token, assistant_message)
+        
+        # 设置聊天完成依赖
+        redis_manager.set_dependency(token, 'chat_complete', {
+            'response': response_text,
+            'timestamp': datetime.now().isoformat()
         })
         
         return {
             "response": response_text,
-            "messageId": len(chat_messages_cache[token]['messages']) - 1
+            "messageId": len(redis_manager.get_recent_messages(token)),
+            "stats": {
+                "total_messages": total_messages,
+                "model_messages": model_messages
+            }
         }
             
     except Exception as e:
@@ -173,26 +166,26 @@ async def upload_image(image: UploadFile = File(...), authorization: str = Depen
 @app.post("/render")
 async def render_image(request: dict, authorization: str = Depends(verify_token)):
     try:
+        token = authorization.split(" ")[1]
         image_data = request.get("image")
         model = request.get("model", "gpt-4")
         prompt = request.get("prompt", "")
         template = request.get("template", "template1")
-        token = authorization.split(" ")[1]
 
         if not image_data:
             raise HTTPException(status_code=400, detail="No image provided")
         
-        # 检查是否有聊天历史
-        if token not in chat_messages_cache or not chat_messages_cache[token]['messages']:
+        # 检查聊天依赖
+        if not redis_manager.check_dependency(token, 'render', ['chat_complete']):
             raise HTTPException(
                 status_code=400, 
-                detail="No chat history found. Please send a message first."
+                detail="Please complete a chat session before rendering"
             )
         
         # 获取最近的聊天消息
-        recent_messages = chat_messages_cache[token]['messages'][-5:]  # 获取最近5条消息
+        recent_messages = redis_manager.get_recent_messages(token, 5)
         chat_context = "\n".join([
-            f"{'User' if msg['type'] == 'user' else 'Assistant'}: {msg['text']}"
+            f"{msg['type'].title()}: {msg['text']}"
             for msg in recent_messages
         ])
         
@@ -245,10 +238,22 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
                 "renderedImage": image_data,
                 "textResponse": text_response
             }
+        
+        # 设置渲染完成依赖
+        redis_manager.set_dependency(token, 'render_complete', {
+            'image': rendered_image,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        # 更新渲染统计
+        total_renders = redis_manager.increment_global_counter('total_renders')
             
         return {
             "renderedImage": rendered_image,
-            "textResponse": f"Image rendered using {template} template with context from chat history"
+            "textResponse": f"Image rendered using {template} template with context from chat history",
+            "stats": {
+                "total_renders": total_renders
+            }
         }
         
     except Exception as e:
@@ -257,30 +262,35 @@ async def render_image(request: dict, authorization: str = Depends(verify_token)
 @app.post("/synthesize")
 async def synthesize_data(request: dict, authorization: str = Depends(verify_token)):
     try:
-        language = request.get("language", "en")
-        scene = request.get("scene", "business")
-        count = request.get("count", 100)
-        filename = request.get("filename", "synthesized_data")
-        
-        # Generate synthetic data based on parameters
-        # This is a placeholder - implement your actual data synthesis logic
-        synthetic_data = {
-            "language": language,
-            "scene": scene,
-            "count": count,
-            "filename": filename,
-            "status": "completed"
-        }
-        
-        # Save to file
-        with open(f"outputs/{filename}.json", "w") as f:
-            json.dump(synthetic_data, f)
-            
+        token = authorization.split(" ")[1]
+        language = request.get("language")
+        scene = request.get("scene")
+        count = request.get("count")
+        filename = request.get("filename")
+
+        # 检查渲染依赖
+        if not redis_manager.check_dependency(token, 'synthesize', ['render_complete']):
+            raise HTTPException(
+                status_code=400, 
+                detail="Please complete image rendering before synthesis"
+            )
+
+        # 获取渲染结果
+        render_data = redis_manager.get_dependency(token, 'render_complete')
+        if not render_data:
+            raise HTTPException(
+                status_code=400,
+                detail="No render data found"
+            )
+
+        # 这里添加数据合成的逻辑
+        # ...
+
         return {
-            "message": f"Successfully generated {count} {scene} samples in {language}",
-            "data": synthetic_data
+            "message": f"Data synthesis completed for {filename}",
+            "status": "success"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -350,6 +360,21 @@ async def save_js(code: dict):
             f.write(code["code"])
         
         return {"message": "JavaScript code saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/stats")
+async def get_stats(authorization: str = Depends(verify_token)):
+    """获取全局统计信息"""
+    try:
+        stats = {
+            "total_messages": redis_manager.get_global_counter('total_messages'),
+            "gpt_messages": redis_manager.get_global_counter('model_messages:gpt-4'),
+            "claude_messages": redis_manager.get_global_counter('model_messages:claude'),
+            "active_sessions": len(redis_manager.redis_client.keys("session:*")),
+            "total_renders": redis_manager.get_global_counter('total_renders')
+        }
+        return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

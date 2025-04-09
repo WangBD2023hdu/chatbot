@@ -325,7 +325,7 @@ const outputFilename = ref('synthesized_data')
 const isSynthesizing = ref(false)
 
 // API configuration
-const apiEndpoint = ref('http://localhost:8000')
+const apiEndpoint = ref('/api')
 const apiKey = ref('your-api-key-here') // 这里应该替换为实际的 API key
 
 const { y: scrollY } = useScroll(messagesContainer)
@@ -632,7 +632,7 @@ onMounted(() => {
   const savedSettings = localStorage.getItem('chatSettings')
   if (savedSettings) {
     const settings = JSON.parse(savedSettings)
-    apiEndpoint.value = settings.apiEndpoint || 'http://localhost:8000'
+    apiEndpoint.value = settings.apiEndpoint || '/api'
     apiKey.value = settings.apiKey || ''
     selectedModel.value = settings.model || 'gpt-4'
     multimodalEnabled.value = settings.multimodal ?? true
